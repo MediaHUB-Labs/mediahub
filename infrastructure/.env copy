@@ -1,0 +1,22 @@
+# ----------------------------------------------------
+# DEVELOPMENT ENVIRONMENT CONFIGURATION (mediahub backend)
+# ----------------------------------------------------
+
+# --- GENERAL SETTINGS ---
+# The path where the single, shared SQLite database file will be created.
+MEDIAHUB_DB_PATH=../infrastructure/database/mediahub.db
+
+# The path where media files will be stored during development.
+MEDIA_UPLOAD_PATH=./uploads
+
+# --- SERVICE PORTS ---
+MEDIA_SERVICE_PORT=8080
+AUTH_SERVICE_PORT=8081
+UPLOAD_SERVICE_PORT=8082
+METADATA_SERVICE_PORT=8083
+THUMBNAIL_SERVICE_PORT=8084
+TRANSCODER_SERVICE_PORT=8085
+
+# --- EXTERNAL BINARIES (for Transcoder/Metadata) ---
+FFMPEG_PATH=ffmpeg
+FFPROBE_PATH=ffprobe
