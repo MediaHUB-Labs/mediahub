@@ -1,8 +1,8 @@
 package handler
 
 import (
-	"mediahub/auth-service/dto"
-	"mediahub/auth-service/service"
+	"mediahub/auth/dto"
+	"mediahub/auth/service"
 	"net/http"
 	"strconv"
 

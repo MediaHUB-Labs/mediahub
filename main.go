@@ -3,11 +3,11 @@ package main
 import (
 	"fmt"
 	"log"
-	"mediahub/auth-service/handler"
-	"mediahub/auth-service/models"
-	"mediahub/auth-service/repository"
-	"mediahub/auth-service/routes"
-	"mediahub/auth-service/service"
+	"mediahub/auth/handler"
+	"mediahub/auth/models"
+	"mediahub/auth/repository"
+	"mediahub/auth/routes"
+	"mediahub/auth/service"
 	"os"
 
 	"github.com/gin-gonic/gin"

@@ -1,7 +1,7 @@
 package routes
 
 import (
-	"mediahub/auth-service/handler"
+	"mediahub/auth/handler"
 
 	"github.com/gin-gonic/gin"
 )
