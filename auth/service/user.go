@@ -35,11 +35,11 @@ func (s *UserService) Register(ctx context.Context, req *dto.SignupRequest) (*dt
 	}
 
 	user := &models.User{
-		Email:    req.Email,
-		Password: string(hashed),
-		// FirstName: req.FirstName,
-		// LastName:  req.LastName,
-		IsActive: true,
+		Email:     req.Email,
+		Password:  string(hashed),
+		FirstName: req.FirstName,
+		LastName:  req.LastName,
+		IsActive:  true,
 	}
 
 	if err := s.repo.Create(ctx, user); err != nil {
@@ -47,10 +47,10 @@ func (s *UserService) Register(ctx context.Context, req *dto.SignupRequest) (*dt
 	}
 
 	return &dto.UserResponse{
-		ID:    user.ID,
-		Email: user.Email,
-		// FirstName: user.FirstName,
-		// LastName:  user.LastName,
+		ID:        user.ID,
+		Email:     user.Email,
+		FirstName: user.FirstName,
+		LastName:  user.LastName,
 		IsActive:  user.IsActive,
 		CreatedAt: user.CreatedAt,
 	}, nil
@@ -77,10 +77,10 @@ func (s *UserService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.Au
 
 	return &dto.AuthResponse{
 		User: dto.UserResponse{
-			ID:    user.ID,
-			Email: user.Email,
-			// FirstName: user.FirstName,
-			// LastName:  user.LastName,
+			ID:        user.ID,
+			Email:     user.Email,
+			FirstName: user.FirstName,
+			LastName:  user.LastName,
 			IsActive:  user.IsActive,
 			CreatedAt: user.CreatedAt,
 		},
@@ -94,10 +94,10 @@ func (s *UserService) GetUser(ctx context.Context, id uint) (*dto.UserResponse, 
 	}
 
 	return &dto.UserResponse{
-		ID:    user.ID,
-		Email: user.Email,
-		// FirstName: user.FirstName,
-		// LastName:  user.LastName,
+		ID:        user.ID,
+		Email:     user.Email,
+		FirstName: user.FirstName,
+		LastName:  user.LastName,
 		IsActive:  user.IsActive,
 		CreatedAt: user.CreatedAt,
 	}, nil
@@ -109,22 +109,22 @@ func (s *UserService) UpdateUser(ctx context.Context, id uint, req *dto.UpdateUs
 		return nil, err
 	}
 
-	// if req.FirstName != "" {
-	//     user.FirstName = req.FirstName
-	// }
-	// if req.LastName != "" {
-	//     user.LastName = req.LastName
-	// }
+	if req.FirstName != "" {
+		user.FirstName = req.FirstName
+	}
+	if req.LastName != "" {
+		user.LastName = req.LastName
+	}
 
 	if err := s.repo.Update(ctx, user); err != nil {
 		return nil, err
 	}
 
 	return &dto.UserResponse{
-		ID:    user.ID,
-		Email: user.Email,
-		// FirstName: user.FirstName,
-		// LastName:  user.LastName,
+		ID:        user.ID,
+		Email:     user.Email,
+		FirstName: user.FirstName,
+		LastName:  user.LastName,
 		IsActive:  user.IsActive,
 		CreatedAt: user.CreatedAt,
 	}, nil
