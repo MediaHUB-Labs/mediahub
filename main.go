@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"log"
 	"mediahub/auth/handler"
-	"mediahub/auth/models"
 	"mediahub/auth/repository"
-	"mediahub/auth/routes"
 	"mediahub/auth/service"
+	"mediahub/models"
+	"mediahub/routes"
 	"os"
 
 	"github.com/gin-gonic/gin"

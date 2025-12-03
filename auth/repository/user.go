@@ -3,7 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
-	"mediahub/auth/models"
+	"mediahub/models"
 
 	"gorm.io/gorm"
 )

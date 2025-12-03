@@ -3,9 +3,10 @@ package service
 import (
 	"context"
 	"errors"
-	"mediahub/auth/dto"
-	"mediahub/auth/models"
+
 	"mediahub/auth/repository"
+	"mediahub/dto"
+	"mediahub/models"
 
 	"golang.org/x/crypto/bcrypt"
 )
