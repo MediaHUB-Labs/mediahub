@@ -33,7 +33,7 @@ func main() {
 
 	dbPath := os.Getenv("DB_PATH")
 	if dbPath == "" {
-		dbPath = "mediahub.db"
+		dbPath = "mediahub.db" // fallback if env not set
 	}
 
 	// Initialize SQLite DB
@@ -42,11 +42,9 @@ func main() {
 		log.Fatal("Failed to connect to database:", err)
 	}
 
-	log.Println("Database connected:", dbPath)
-
 	// Auto-migrate
 	db.AutoMigrate(&models.User{})
-	fmt.Println("✅ Database connected and migrated")
+	fmt.Println("Database connected and migrated")
 
 	// ═══════════════════════════════════════════════════════
 	// 2️ CREATE INSTANCES (Direct, no interfaces)
@@ -59,14 +57,15 @@ func main() {
 	// ═══════════════════════════════════════════════════════
 	// 3️ GIN SETUP & ROUTES
 	// ═══════════════════════════════════════════════════════
-
+	// Set environment mode
+	gin.SetMode(os.Getenv("GIN_MODE"))
+	// Routes
 	router := gin.Default()
 
 	// Register all routes
 	routes.RegisterRoutes(router, userHandler)
 
 	// Start Server
-	log.Println("MediaHUB Server running on port:", port)
 	err = router.Run(":" + port)
 	if err != nil {
 		log.Fatal("Server failed:", err)
