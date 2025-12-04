@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"mediahub/models"
+	"strings"
 
 	"gorm.io/gorm"
 )
@@ -20,7 +21,8 @@ func (r *UserRepository) Create(ctx context.Context, user *models.User) error {
 	result := r.db.WithContext(ctx).Create(user)
 
 	if result.Error != nil {
-		if errors.Is(result.Error, gorm.ErrDuplicatedKey) {
+		// DUPLICATE EMAIL CHECK
+		if strings.Contains(result.Error.Error(), "UNIQUE constraint failed: users.email") {
 			return errors.New("email already exists")
 		}
 		return result.Error
@@ -66,7 +68,17 @@ func (r *UserRepository) Update(ctx context.Context, user *models.User) error {
 }
 
 func (r *UserRepository) Delete(ctx context.Context, id uint) error {
-	return r.db.WithContext(ctx).Delete(&models.User{}, id).Error
+	result := r.db.WithContext(ctx).Delete(&models.User{}, id)
+
+	if result.Error != nil {
+		return result.Error
+	}
+
+	if result.RowsAffected == 0 {
+		return errors.New("user not found or already deleted")
+	}
+
+	return nil
 }
 
 func (r *UserRepository) FindAll(ctx context.Context, limit, offset int) ([]models.User, error) {

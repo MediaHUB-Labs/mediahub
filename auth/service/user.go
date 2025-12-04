@@ -64,7 +64,7 @@ func (s *UserService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.Au
 
 	user, err := s.repo.FindByEmail(ctx, req.Email)
 	if err != nil {
-		return nil, errors.New("invalid credentials")
+		return nil, errors.New("invalid email or password")
 	}
 
 	if !user.IsActive {
@@ -72,7 +72,7 @@ func (s *UserService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.Au
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
-		return nil, errors.New("invalid credentials")
+		return nil, errors.New("invalid email or password")
 	}
 
 	return &dto.AuthResponse{
