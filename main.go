@@ -6,8 +6,13 @@ import (
 	"mediahub/auth/handler"
 	"mediahub/auth/repository"
 	"mediahub/auth/service"
+	"mediahub/dto"
+	mediahandler "mediahub/media/handler"
+	mediarepository "mediahub/media/repository"
+	mediaservice "mediahub/media/service"
 	"mediahub/models"
 	"mediahub/routes"
+	"net/http"
 	"os"
 
 	"github.com/gin-gonic/gin"
@@ -43,7 +48,10 @@ func main() {
 	}
 
 	// Auto-migrate
-	db.AutoMigrate(&models.User{})
+	dbErr := db.AutoMigrate(&models.User{}, &models.Media{}, &models.UserMediaProgress{})
+	if dbErr != nil {
+		log.Fatalf("Fatal: Database migration failed: %v", dbErr)
+	}
 	fmt.Println("Database connected and migrated")
 
 	// ═══════════════════════════════════════════════════════
@@ -54,6 +62,9 @@ func main() {
 	userService := service.NewUserService(userRepo)
 	userHandler := handler.NewUserHandler(userService)
 
+	mediaRepo := mediarepository.NewMediaRepository(db)
+	mediaService := mediaservice.NewMediaService(mediaRepo)
+	mediaHandler := mediahandler.NewMediaHandler(mediaService)
 	// ═══════════════════════════════════════════════════════
 	// 3️ GIN SETUP & ROUTES
 	// ═══════════════════════════════════════════════════════
@@ -63,7 +74,15 @@ func main() {
 	router := gin.Default()
 
 	// Register all routes
-	routes.RegisterRoutes(router, userHandler)
+	routes.RegisterAuthRoutes(router, userHandler)
+	routes.RegisterMediaRoutes(router, mediaHandler)
+
+	// SERVER HEALTH CHECK
+	router.GET("/api/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, dto.HealthReponse{
+			Message: "OK",
+		})
+	})
 
 	// Start Server
 	err = router.Run(":" + port)
