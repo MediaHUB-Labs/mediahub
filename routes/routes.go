@@ -29,7 +29,7 @@ func RegisterMediaRoutes(router *gin.Engine, mediaHandler *mediaHandler.MediaHan
 		media.GET("/health", mediaHandler.MediaHealth)
 
 		// // Creation
-		// media.POST("/add", mediaHandler.CreateMedia)
+		media.POST("/add", mediaHandler.UploadMedia)
 
 		// // Fetching/Listing (Uses query parameters like ?category=Movie or ?limit=20)
 		// media.GET("/list", mediaHandler.ListMedia)

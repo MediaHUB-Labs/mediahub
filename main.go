@@ -12,6 +12,7 @@ import (
 	mediaservice "mediahub/media/service"
 	"mediahub/models"
 	"mediahub/routes"
+	uploadrepository "mediahub/upload/repository"
 	"net/http"
 	"os"
 
@@ -63,7 +64,8 @@ func main() {
 	userHandler := handler.NewUserHandler(userService)
 
 	mediaRepo := mediarepository.NewMediaRepository(db)
-	mediaService := mediaservice.NewMediaService(mediaRepo)
+	uploadRepo := uploadrepository.NewUploadRepository(db)
+	mediaService := mediaservice.NewMediaService(mediaRepo, uploadRepo)
 	mediaHandler := mediahandler.NewMediaHandler(mediaService)
 	// ═══════════════════════════════════════════════════════
 	// 3️ GIN SETUP & ROUTES

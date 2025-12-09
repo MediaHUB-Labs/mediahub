@@ -29,7 +29,13 @@ go.work.sum
 
 # Editor/IDE
 # .idea/
-# .vscode/
+.vscode/
 
 # Log Files
 *.log
+
+# File Upload Directory
+uploads/videos
+uploads/images
+uploads/documents
+uploads/audios

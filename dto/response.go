@@ -12,8 +12,7 @@ type UserResponse struct {
 }
 
 type AuthResponse struct {
-	User  UserResponse `json:"user"`
-	Token string       `json:"token,omitempty"`
+	Token string `json:"token,omitempty"`
 }
 
 type ApiResponse struct {
@@ -25,4 +24,11 @@ type ApiResponse struct {
 
 type HealthReponse struct {
 	Message string `json:"message"`
+}
+
+type UploadResult struct {
+	FilePath   string
+	MimeType   string
+	FileSizeKB uint
+	Checksum   string
 }

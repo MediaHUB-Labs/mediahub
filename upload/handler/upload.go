@@ -1,6 +1,8 @@
 package handler
 
-import "mediahub/upload/service"
+import (
+	"mediahub/upload/service"
+)
 
 type UploadHandler struct {
 	service *service.UploadService

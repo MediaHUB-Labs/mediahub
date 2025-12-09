@@ -25,15 +25,10 @@ type UserRequest struct {
 // Media Structs
 
 type MediaCreateRequest struct {
-	FilePath      string `json:"file_path" binding:"required"`
-	MimeType      string `json:"mime_type" binding:"required"`
-	Checksum      string `json:"checksum" binding:"required"`
-	Title         string `json:"title" binding:"required"`
-	Description   string `json:"description"`
-	Category      string `json:"category"`
-	Genres        string `json:"genres"`
-	FileSizeKB    uint   `json:"file_size_kb" binding:"required"`
-	DurationSec   uint   `json:"duration_sec"`
-	Resolution    string `json:"resolution"`
-	ThumbnailPath string `json:"thumbnail_path"`
+	Title       string `form:"title"`
+	Description string `form:"description"`
+	Category    string `form:"category"`
+	Genres      string `form:"genres"`
+	DurationSec uint   `form:"duration_sec"`
+	Resolution  string `form:"resolution"`
 }
