@@ -83,6 +83,12 @@ func (s *UserService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.Au
 
 	return &dto.AuthResponse{
 		Token: token,
+		User: dto.UserResponse{
+			ID:        user.ID,
+			Email:     user.Email,
+			FirstName: user.FirstName,
+			LastName:  user.LastName,
+		},
 	}, nil
 }
 

@@ -13,6 +13,7 @@ type UserResponse struct {
 
 type AuthResponse struct {
 	Token string `json:"token,omitempty"`
+	User  UserResponse
 }
 
 type ApiResponse struct {
