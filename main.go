@@ -89,6 +89,21 @@ func main() {
 		})
 	})
 
+	// --- 2. SERVE UI ASSETS ---
+	// We tell Go: "When the browser asks for /view/..., look in ./mediahub-ui/view/..."
+	router.Static("/view", "./mediahub-ui/view")
+	router.Static("/src", "./mediahub-ui/src")
+
+	// Serve the root-level JS files from the UI folder
+	router.StaticFile("/App.js", "./mediahub-ui/App.js")
+	router.StaticFile("/tailwind.min.js", "./mediahub-ui/tailwind.min.js")
+
+	// --- 3. THE SPA FALLBACK ---
+	// For any other route (like /login or /movies), serve the index.html
+	router.NoRoute(func(c *gin.Context) {
+		c.File("./mediahub-ui/index.html")
+	})
+
 	// Start Server
 	err = router.Run(":" + port)
 	if err != nil {
