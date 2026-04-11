@@ -17,6 +17,44 @@ import (
 	"gorm.io/gorm"
 )
 
+// Allowed MIME types for upload
+var allowedMIMETypes = map[string]bool{
+	// Video
+	"video/mp4":        true,
+	"video/x-matroska": true,
+	"video/webm":       true,
+	"video/avi":        true,
+	"video/x-msvideo":  true,
+	"video/quicktime":  true,
+	"video/x-flv":      true,
+	"video/mpeg":       true,
+	// Audio
+	"audio/mpeg":    true,
+	"audio/mp3":     true,
+	"audio/wav":     true,
+	"audio/x-wav":   true,
+	"audio/ogg":     true,
+	"audio/flac":    true,
+	"audio/aac":     true,
+	"audio/x-m4a":   true,
+	"audio/mp4":     true,
+	"audio/webm":    true,
+	"audio/x-flac":  true,
+	// Images
+	"image/jpeg":    true,
+	"image/png":     true,
+	"image/gif":     true,
+	"image/webp":    true,
+	"image/svg+xml": true,
+	"image/bmp":     true,
+	"image/tiff":    true,
+	// Documents
+	"application/pdf": true,
+	"application/msword": true,
+	"application/vnd.openxmlformats-officedocument.wordprocessingml.document": true,
+	"text/plain": true,
+}
+
 type UploadRepository struct {
 	db *gorm.DB
 }
@@ -24,11 +62,36 @@ type UploadRepository struct {
 func NewUploadRepository(db *gorm.DB) *UploadRepository {
 	return &UploadRepository{db: db}
 }
+
+// getBasePath returns the configured upload base path.
+// Uses UPLOAD_PATH env if set, otherwise resolves "uploads" relative to the executable.
+func getBasePath() string {
+	envPath := os.Getenv("UPLOAD_PATH")
+	if envPath != "" {
+		return envPath
+	}
+
+	// Resolve relative to executable directory
+	exePath, err := os.Executable()
+	if err != nil {
+		// Fallback to relative path
+		return "uploads"
+	}
+	return filepath.Join(filepath.Dir(exePath), "uploads")
+}
+
 func (r *UploadRepository) Upload(ctx context.Context, file *multipart.FileHeader) (*dto.UploadResult, error) {
 
 	utils.LogToFile("Upload started for file: " + file.Filename)
 
-	basePath := "uploads"
+	// Validate MIME type
+	mimeType := file.Header.Get("Content-Type")
+	if !allowedMIMETypes[mimeType] {
+		utils.LogToFile("Rejected file with unsupported MIME type: " + mimeType)
+		return nil, fmt.Errorf("unsupported file type: %s", mimeType)
+	}
+
+	basePath := getBasePath()
 
 	// Ensure uploads directory exists
 	if err := os.MkdirAll(basePath, os.ModePerm); err != nil {
@@ -44,9 +107,6 @@ func (r *UploadRepository) Upload(ctx context.Context, file *multipart.FileHeade
 	}
 	defer src.Close()
 
-	// Detect MIME type
-	mimeType := file.Header.Get("Content-Type")
-
 	// Decide sub-folder based on type
 	subDir := "others"
 	switch {
@@ -56,12 +116,15 @@ func (r *UploadRepository) Upload(ctx context.Context, file *multipart.FileHeade
 		subDir = "images"
 	case strings.HasPrefix(mimeType, "audio/"):
 		subDir = "audio"
-	case mimeType == "application/pdf":
+	case mimeType == "application/pdf",
+		mimeType == "application/msword",
+		mimeType == "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+		mimeType == "text/plain":
 		subDir = "documents"
 	}
 
 	// Final base upload path
-	baseUploadPath := filepath.Join("uploads", subDir)
+	baseUploadPath := filepath.Join(basePath, subDir)
 
 	// Create directory
 	if err := os.MkdirAll(baseUploadPath, os.ModePerm); err != nil {

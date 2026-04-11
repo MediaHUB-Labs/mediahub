@@ -39,6 +39,10 @@ uploads/videos
 uploads/images
 uploads/documents
 uploads/audios
+uploads/audio
+uploads/others
+uploads/thumbnails
+uploads/transcoded
 
 # MediaHUB-UI Folder
 mediahub-ui
