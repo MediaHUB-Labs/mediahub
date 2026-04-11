@@ -49,11 +49,19 @@ func (s *UserService) Register(ctx context.Context, req *dto.SignupRequest) (*dt
 
 	token, tokenErr := auth.GenerateToken(user.ID, user.Email)
 	if tokenErr != nil {
-		return nil, err
+		return nil, tokenErr // FIX: was returning `err` (nil) instead of `tokenErr`
 	}
 
 	return &dto.AuthResponse{
 		Token: token,
+		User: dto.UserResponse{
+			ID:        user.ID,
+			Email:     user.Email,
+			FirstName: user.FirstName,
+			LastName:  user.LastName,
+			IsActive:  user.IsActive,
+			CreatedAt: user.CreatedAt,
+		},
 	}, nil
 }
 
@@ -78,7 +86,7 @@ func (s *UserService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.Au
 
 	token, tokenErr := auth.GenerateToken(user.ID, user.Email)
 	if tokenErr != nil {
-		return nil, err
+		return nil, tokenErr // FIX: was returning `err` (nil) instead of `tokenErr`
 	}
 
 	return &dto.AuthResponse{
@@ -88,6 +96,8 @@ func (s *UserService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.Au
 			Email:     user.Email,
 			FirstName: user.FirstName,
 			LastName:  user.LastName,
+			IsActive:  user.IsActive,
+			CreatedAt: user.CreatedAt,
 		},
 	}, nil
 }
