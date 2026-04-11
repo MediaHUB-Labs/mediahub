@@ -13,25 +13,28 @@ import (
 func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
+		tokenStr := ""
+
+		if authHeader != "" {
+			// Expect "Bearer <token>"
+			parts := strings.SplitN(authHeader, " ", 2)
+			if len(parts) == 2 && strings.ToLower(parts[0]) == "bearer" {
+				tokenStr = parts[1]
+			}
+		}
+
+		// Fallback to query parameter "token" (for media streaming)
+		if tokenStr == "" {
+			tokenStr = c.Query("token")
+		}
+
+		if tokenStr == "" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"success": false,
-				"error":   "authorization header is required",
+				"error":   "authorization token is required (header or query param)",
 			})
 			return
 		}
-
-		// Expect "Bearer <token>"
-		parts := strings.SplitN(authHeader, " ", 2)
-		if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
-				"success": false,
-				"error":   "authorization header format must be 'Bearer <token>'",
-			})
-			return
-		}
-
-		tokenStr := parts[1]
 		token, err := ValidateToken(tokenStr)
 		if err != nil || !token.Valid {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
@@ -65,6 +68,52 @@ func AuthMiddleware() gin.HandlerFunc {
 
 		c.Set("user_id", uint(userIDFloat))
 		c.Set("email", email)
+
+		c.Next()
+	}
+}
+
+// OptionalAuthMiddleware attempts to validate the JWT token.
+// If valid, it injects user info. If missing/invalid, it still allows the request to proceed.
+func OptionalAuthMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authHeader := c.GetHeader("Authorization")
+		tokenStr := ""
+
+		if authHeader != "" {
+			parts := strings.SplitN(authHeader, " ", 2)
+			if len(parts) == 2 && strings.ToLower(parts[0]) == "bearer" {
+				tokenStr = parts[1]
+			}
+		}
+
+		if tokenStr == "" {
+			tokenStr = c.Query("token")
+		}
+
+		if tokenStr == "" {
+			c.Next()
+			return
+		}
+
+		token, err := ValidateToken(tokenStr)
+		if err != nil || !token.Valid {
+			c.Next()
+			return
+		}
+
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok {
+			c.Next()
+			return
+		}
+
+		userIDFloat, ok := claims["user_id"].(float64)
+		if ok {
+			email, _ := claims["email"].(string)
+			c.Set("user_id", uint(userIDFloat))
+			c.Set("email", email)
+		}
 
 		c.Next()
 	}

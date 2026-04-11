@@ -1,12 +1,10 @@
 package handler
 
 import (
-	"fmt"
 	"mediahub/dto"
 	"net/http"
 	"os"
 	"strconv"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -42,13 +40,9 @@ func (h *MediaHandler) StreamMedia(c *gin.Context) {
 		return
 	}
 
-	// Verify file exists
+	// Use the original file path for direct streaming.
+	// We DO NOT hijack this to the transcoded HLS manifest here, as that is handled by /api/media/hls/:id
 	filePath := media.FilePath
-
-	// If transcoded version exists and is an HLS manifest, redirect to that
-	if media.IsTranscoded && media.TranscodedPath != "" {
-		filePath = media.TranscodedPath
-	}
 
 	fileInfo, err := os.Stat(filePath)
 	if err != nil {
@@ -70,90 +64,24 @@ func (h *MediaHandler) StreamMedia(c *gin.Context) {
 	}
 	defer file.Close()
 
-	fileSize := fileInfo.Size()
-
-	// Set content type
+	// Set content type - trust database but fallback to detection if empty
 	contentType := media.MimeType
 	if contentType == "" {
-		contentType = "application/octet-stream"
-	}
-
-	// Check for Range header
-	rangeHeader := c.GetHeader("Range")
-
-	if rangeHeader == "" {
-		// No range request — serve the full file
-		c.Header("Content-Length", fmt.Sprintf("%d", fileSize))
-		c.Header("Content-Type", contentType)
-		c.Header("Accept-Ranges", "bytes")
-		c.File(filePath)
-		return
-	}
-
-	// Parse Range header: "bytes=start-end"
-	rangeHeader = strings.TrimPrefix(rangeHeader, "bytes=")
-	parts := strings.SplitN(rangeHeader, "-", 2)
-
-	var start, end int64
-
-	if parts[0] != "" {
-		start, err = strconv.ParseInt(parts[0], 10, 64)
-		if err != nil {
-			c.JSON(http.StatusRequestedRangeNotSatisfiable, dto.ApiResponse{
-				Success: false,
-				Error:   "invalid range",
-			})
-			return
+		buffer := make([]byte, 512)
+		n, _ := file.ReadAt(buffer, 0)
+		if n > 0 {
+			contentType = http.DetectContentType(buffer[:n])
+		} else {
+			contentType = "application/octet-stream"
 		}
 	}
 
-	if len(parts) > 1 && parts[1] != "" {
-		end, err = strconv.ParseInt(parts[1], 10, 64)
-		if err != nil {
-			c.JSON(http.StatusRequestedRangeNotSatisfiable, dto.ApiResponse{
-				Success: false,
-				Error:   "invalid range",
-			})
-			return
-		}
-	} else {
-		// If no end specified, serve up to 2MB chunk or end of file
-		end = start + 2*1024*1024 - 1
-		if end >= fileSize {
-			end = fileSize - 1
-		}
-	}
-
-	// Validate range
-	if start < 0 || start >= fileSize || end >= fileSize || start > end {
-		c.Header("Content-Range", fmt.Sprintf("bytes */%d", fileSize))
-		c.JSON(http.StatusRequestedRangeNotSatisfiable, dto.ApiResponse{
-			Success: false,
-			Error:   "range not satisfiable",
-		})
-		return
-	}
-
-	contentLength := end - start + 1
-
-	// Seek to start position
-	if _, err := file.Seek(start, 0); err != nil {
-		c.JSON(http.StatusInternalServerError, dto.ApiResponse{
-			Success: false,
-			Error:   "failed to seek file",
-		})
-		return
-	}
-
-	// Set response headers for partial content
-	c.Header("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, fileSize))
-	c.Header("Accept-Ranges", "bytes")
-	c.Header("Content-Length", fmt.Sprintf("%d", contentLength))
+	// Set required headers for streaming and inline display
 	c.Header("Content-Type", contentType)
-	c.Header("Cache-Control", "no-cache")
-
-	// Send 206 Partial Content
-	c.DataFromReader(http.StatusPartialContent, contentLength, contentType, file, nil)
+	c.Header("Content-Disposition", "inline")
+	c.Header("Accept-Ranges", "bytes")
+	// Note: http.ServeContent handles Range requests, ETag, and Content-Length automatically.
+	http.ServeContent(c.Writer, c.Request, fileInfo.Name(), fileInfo.ModTime(), file)
 }
 
 // ServeThumbnail serves a media item's thumbnail image.
