@@ -35,8 +35,6 @@ func RegisterAuthRoutes(router *gin.Engine, userHandler *authHandler.UserHandler
 	}
 }
 
-// RegisterMediaRoutes sets up media routes.
-// Health check is public; all CRUD/streaming routes are protected by JWT middleware.
 func RegisterMediaRoutes(router *gin.Engine, mediaHandler *mediaHandler.MediaHandler, transcodeService *transcode.TranscodeService) {
 
 	media := router.Group("/api/media")
@@ -44,34 +42,37 @@ func RegisterMediaRoutes(router *gin.Engine, mediaHandler *mediaHandler.MediaHan
 		// Public routes
 		media.GET("/health", mediaHandler.MediaHealth)
 
-		// Protected routes (require JWT)
+		// Partially public routes (Guest access enabled via OptionalAuthMiddleware)
+		optional := media.Group("")
+		optional.Use(auth.OptionalAuthMiddleware())
+		{
+			// Listing & Search
+			optional.GET("/list", mediaHandler.ListMedia)
+			optional.GET("/search", mediaHandler.SearchMedia)
+			optional.GET("/categories", mediaHandler.GetCategories)
+
+			// Details
+			optional.POST("/details", mediaHandler.GetMediaDetails)
+
+			// Streaming & Assets
+			optional.GET("/stream/:id", mediaHandler.StreamMedia)
+			optional.GET("/thumbnail/:id", mediaHandler.ServeThumbnail)
+			optional.GET("/hls/:id", mediaHandler.ServeHLSManifest)
+		}
+
+		// Protected routes (require JWT - strict)
 		protected := media.Group("")
 		protected.Use(auth.AuthMiddleware())
 		{
 			// Upload
 			protected.POST("/add", mediaHandler.UploadMedia)
 
-			// Listing & Search
-			protected.GET("/list", mediaHandler.ListMedia)
-			protected.GET("/search", mediaHandler.SearchMedia)
-			protected.GET("/categories", mediaHandler.GetCategories)
-
-			// Details & CRUD
-			protected.POST("/details", mediaHandler.GetMediaDetails)
+			// Metadata Management
 			protected.PUT("/metadata", mediaHandler.UpdateMediaMetadata)
 			protected.DELETE("/item", mediaHandler.DeleteMedia)
 
 			// Personal vault (photos, documents)
 			protected.GET("/vault", mediaHandler.GetUserVault)
-
-			// Streaming
-			protected.GET("/stream/:id", mediaHandler.StreamMedia)
-
-			// Thumbnails
-			protected.GET("/thumbnail/:id", mediaHandler.ServeThumbnail)
-
-			// HLS manifest
-			protected.GET("/hls/:id", mediaHandler.ServeHLSManifest)
 
 			// Transcoding
 			if transcodeService != nil {
