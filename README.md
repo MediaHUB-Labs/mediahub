@@ -4,6 +4,17 @@
 
 MediaHUB is a lightweight Go backend that turns any machine into a personal media server. Upload videos, images, audio, and documents — organize them by category and genre — and stream them from anywhere on your local network via a clean web UI.
 
+### Key Features
+
+- **Movies & Music** — Shared across all users, browse and stream from any device
+- **Photo & Document Vault** — Private per-user storage, only the owner can access
+- **Video Streaming** — HTTP 206 Range Requests for native `<video>` seeking
+- **HLS Transcoding** — CPU-only (no GPU required) video transcoding with FFmpeg
+- **Music Playlists** — Create and manage personal playlists
+- **Continue Watching** — Pick up where you left off with automatic progress tracking
+- **Thumbnails** — Auto-generated video thumbnails via FFmpeg
+- **JWT Authentication** — Secure API with token-based auth on all protected routes
+
 ---
 
 ## Table of Contents
@@ -17,9 +28,9 @@ MediaHUB is a lightweight Go backend that turns any machine into a personal medi
   - [Environment Configuration](#environment-configuration)
   - [Running the Server](#running-the-server)
 - [Setting Up the UI (mediahub-ui)](#setting-up-the-ui-mediahub-ui)
+- [Access Control Model](#access-control-model)
 - [API Reference](#api-reference)
 - [Database Schema](#database-schema)
-- [Codebase Analysis](#codebase-analysis)
 - [License](#license)
 
 ---
@@ -27,39 +38,39 @@ MediaHUB is a lightweight Go backend that turns any machine into a personal medi
 ## Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                     MediaHUB Server                     │
-│                       (Go / Gin)                        │
-│                                                         │
-│  ┌───────────┐   ┌───────────┐   ┌──────────────────┐  │
-│  │   Auth     │   │   Media   │   │     Upload       │  │
-│  │  Module    │   │  Module   │   │     Module       │  │
-│  │           │   │           │   │                  │  │
-│  │ Handler   │   │ Handler   │   │ Handler          │  │
-│  │ Service   │   │ Service   │   │ Service          │  │
-│  │ Repository│   │ Repository│   │ Repository       │  │
-│  └─────┬─────┘   └─────┬─────┘   └────────┬─────────┘  │
-│        │               │                   │            │
-│        └───────────────┼───────────────────┘            │
-│                        │                                │
-│                 ┌──────┴──────┐                          │
-│                 │  SQLite DB  │                          │
-│                 │ (GORM ORM)  │                          │
-│                 └─────────────┘                          │
-│                                                         │
-│  ┌─────────────────────────────────────────────────┐    │
-│  │         Static File Server (mediahub-ui)        │    │
-│  │      Served at / via Gin's Static middleware     │    │
-│  └─────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                         MediaHUB Server                              │
+│                           (Go / Gin)                                 │
+│                                                                      │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐            │
+│  │   Auth   │  │  Media   │  │ Progress │  │ Playlist │            │
+│  │  Module  │  │  Module  │  │  Module  │  │  Module  │            │
+│  │          │  │          │  │          │  │          │            │
+│  │ Handler  │  │ Handler  │  │ Handler  │  │ Handler  │            │
+│  │ Service  │  │ Service  │  │ Service  │  │ Service  │            │
+│  │ Repos.   │  │ Repos.   │  │ Repos.   │  │ Repos.   │            │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘            │
+│       │              │              │              │                  │
+│       └──────────────┼──────────────┼──────────────┘                  │
+│                      │              │                                 │
+│  ┌───────────┐ ┌─────┴──────┐ ┌────┴────────┐ ┌──────────────┐     │
+│  │ Upload    │ │  SQLite DB │ │ Transcode   │ │  FFmpeg /    │     │
+│  │ Module    │ │  (GORM)    │ │ Service     │ │  FFprobe     │     │
+│  └───────────┘ └────────────┘ └─────────────┘ └──────────────┘     │
+│                                                                      │
+│  ┌───────────────────┐  ┌──────────────────────────────────────┐    │
+│  │  JWT Middleware    │  │   Static File Server (mediahub-ui)  │    │
+│  │  (Auth Gate)       │  │   Served at / via Gin middleware    │    │
+│  └───────────────────┘  └──────────────────────────────────────┘    │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
-Each domain module (Auth, Media, Upload) follows a clean **3-layer architecture**:
+Each domain module follows a clean **3-layer architecture**:
 
 | Layer          | Responsibility                                              |
 | -------------- | ----------------------------------------------------------- |
 | **Handler**    | HTTP request/response handling, input validation, status codes |
-| **Service**    | Business logic, orchestration between repositories          |
+| **Service**    | Business logic, orchestration, access control               |
 | **Repository** | Direct database access via GORM                             |
 
 ---
@@ -75,6 +86,7 @@ Each domain module (Auth, Media, Upload) follows a clean **3-layer architecture*
 | Auth         | JWT ([golang-jwt/jwt](https://github.com/golang-jwt/jwt) v5) + bcrypt |
 | Validation   | [go-playground/validator](https://github.com/go-playground/validator) v10 |
 | Config       | `.env` files via [godotenv](https://github.com/joho/godotenv) |
+| Transcoding  | FFmpeg (optional, CPU-only — `libx264` software encoder)     |
 | Frontend     | Vanilla JS + TailwindCSS (separate repo: `mediahub-ui`)     |
 
 ---
@@ -83,77 +95,101 @@ Each domain module (Auth, Media, Upload) follows a clean **3-layer architecture*
 
 ```
 mediahub/
-├── main.go                  # Entry point — DB init, DI wiring, Gin setup, static serving
-├── go.mod / go.sum          # Go module dependencies
-├── .env.example             # Environment variable template
+├── main.go                          # Entry point — DB init, DI wiring, Gin setup, static serving
+├── go.mod / go.sum                  # Go module dependencies
+├── .env.example                     # Environment variable template
 ├── .gitignore
-├── LICENSE                  # MIT License
+├── LICENSE                          # MIT License
 │
-├── auth/                    # Authentication module
-│   ├── jwt.go               #   JWT token generation & validation
+├── auth/                            # Authentication module
+│   ├── jwt.go                       #   JWT token generation & validation (env-based expiry)
+│   ├── middleware.go                #   JWT auth middleware (Bearer token → user_id in context)
 │   ├── handler/
-│   │   └── user.go          #   HTTP handlers: Signup, Login, GetUser, UpdateUser, DeleteUser
+│   │   └── user.go                  #   HTTP handlers: Signup, Login, GetUser, UpdateUser, DeleteUser
 │   ├── service/
-│   │   └── user.go          #   Business logic: registration, login, password hashing
+│   │   └── user.go                  #   Business logic: registration, login, password hashing
 │   └── repository/
-│       └── user.go          #   DB CRUD: Create, FindByEmail, FindByID, Update, Delete, FindAll
+│       └── user.go                  #   DB CRUD: Create, FindByEmail, FindByID, Update, Delete, FindAll
 │
-├── media/                   # Media management module
+├── media/                           # Media management module
 │   ├── handler/
-│   │   └── media.go         #   HTTP handlers: MediaHealth, UploadMedia
+│   │   ├── media.go                 #   HTTP handlers: Upload, List, Search, Details, Update, Delete, Vault
+│   │   └── stream.go               #   HTTP 206 streaming, thumbnail serving, HLS manifest
 │   ├── service/
-│   │   └── media.go         #   Business logic: file upload orchestration, DB insert with rollback
+│   │   └── media.go                 #   Business logic: visibility rules, FFmpeg probing, auto-thumbnails
 │   └── repository/
-│       └── media.go         #   DB CRUD: Create
+│       └── media.go                 #   DB CRUD: FindAll, Search, FindByUser, GetCategories, etc.
 │
-├── upload/                  # File upload module
+├── progress/                        # Playback progress tracking module
 │   ├── handler/
-│   │   └── upload.go        #   Handler struct (scaffold, not yet wired)
+│   │   └── handler.go              #   HTTP handlers: SaveProgress, ContinueWatching, ClearProgress
 │   ├── service/
-│   │   └── upload.go        #   Service struct (scaffold)
+│   │   └── service.go              #   Business logic: upsert progress, auto-complete at ≥95%
 │   └── repository/
-│       └── upload.go        #   Core upload logic: save-to-disk, MIME detection, SHA-256 checksum
+│       └── repository.go           #   DB CRUD: Upsert, FindByUser, Delete, MarkCompleted
 │
-├── models/                  # GORM data models
-│   ├── user.go              #   User model
-│   ├── media.go             #   Media model (videos, images, docs, audio)
-│   └── userMediaProgress.go #   Watch progress tracking model
+├── playlist/                        # Playlist management module
+│   ├── handler/
+│   │   └── handler.go              #   HTTP handlers: CRUD playlists, add/remove items
+│   ├── service/
+│   │   └── service.go              #   Business logic: ownership checks, audio-only validation
+│   └── repository/
+│       └── repository.go           #   DB CRUD: playlists + items, auto-position, cascading deletes
 │
-├── dto/                     # Data Transfer Objects
-│   ├── request.go           #   Request structs with validation tags
-│   └── response.go          #   Response structs (ApiResponse, AuthResponse, etc.)
+├── upload/                          # File upload module
+│   ├── handler/
+│   │   └── upload.go               #   Handler struct (scaffold)
+│   ├── service/
+│   │   └── upload.go               #   Service struct (scaffold)
+│   └── repository/
+│       └── upload.go               #   Upload logic: save-to-disk, MIME validation, SHA-256 checksum
+│
+├── transcode/                       # Video transcoding module
+│   └── transcode.go                #   CPU-only HLS transcoding (libx264, veryfast preset)
+│
+├── models/                          # GORM data models
+│   ├── user.go                      #   User model
+│   ├── media.go                     #   Media model (with ownership & visibility fields)
+│   ├── playlist.go                  #   Playlist & PlaylistItem models
+│   └── userMediaProgress.go         #   Watch progress tracking model
+│
+├── dto/                             # Data Transfer Objects
+│   ├── request.go                   #   Request structs: auth, media, progress, playlist
+│   └── response.go                  #   Response structs: API, media, progress, playlist, FFmpeg
 │
 ├── routes/
-│   └── routes.go            #   Route registration: /api/auth/* and /api/media/*
+│   └── routes.go                    #   Route registration with JWT middleware on protected routes
 │
 ├── utils/
-│   ├── helper.go            #   File-based logging utility
-│   └── validation.go        #   Validation error parser for clean API messages
+│   ├── helper.go                    #   File-based logging utility
+│   ├── validation.go                #   Validation error parser for clean API messages
+│   ├── ffmpeg.go                    #   FFmpeg/FFprobe detection & media metadata probing
+│   └── thumbnail.go                 #   Video thumbnail generation via FFmpeg
 │
-├── uploads/                 # File storage (auto-created, gitignored)
+├── uploads/                         # File storage (auto-created, gitignored)
 │   ├── videos/
 │   ├── images/
-│   ├── audios/
-│   └── documents/
+│   ├── audio/
+│   ├── documents/
+│   ├── thumbnails/                  #   Auto-generated video thumbnails
+│   └── transcoded/                  #   HLS transcoded segments & manifests
 │
-├── Logs/                    # Debug logs directory (date-stamped files)
+├── Logs/                            # Debug logs directory (date-stamped files)
 │
-├── mediahub-ui/             # Frontend static files (cloned from mediahub-ui repo)
-│   ├── index.html
-│   ├── App.js               #   SPA router & component renderer
-│   ├── assets/
-│   │   └── output.css       #   Compiled TailwindCSS
-│   ├── view/                #   Pages & components
-│   │   ├── Home.js
-│   │   ├── pages/
-│   │   └── components/
-│   ├── src/
-│   │   ├── global/config.js #   API base URL config
-│   │   ├── connection/      #   Server health check
-│   │   └── utils/           #   Theme toggle, etc.
-│   └── README.md
-│
-└── mediahub-server          # Compiled binary (gitignored recommended)
+└── mediahub-ui/                     # Frontend static files (cloned from mediahub-ui repo)
+    ├── index.html
+    ├── App.js                       #   SPA router & component renderer
+    ├── assets/
+    │   └── output.css               #   Compiled TailwindCSS
+    ├── view/                        #   Pages & components
+    │   ├── Home.js
+    │   ├── pages/
+    │   └── components/
+    ├── src/
+    │   ├── global/config.js         #   API base URL config
+    │   ├── connection/              #   Server health check
+    │   └── utils/                   #   Theme toggle, etc.
+    └── README.md
 ```
 
 ---
@@ -164,6 +200,18 @@ mediahub/
 
 - **Go** 1.21+ installed ([download](https://go.dev/dl/))
 - **Git**
+- **FFmpeg** (optional) — for video thumbnails and HLS transcoding
+  ```bash
+  # Ubuntu/Debian
+  sudo apt install ffmpeg
+
+  # macOS
+  brew install ffmpeg
+
+  # Verify installation
+  ffmpeg -version
+  ```
+  > MediaHUB works without FFmpeg — thumbnails and transcoding will simply be skipped.
 
 ### Installation
 
@@ -199,10 +247,18 @@ GIN_MODE=debug
 LOGGER=true
 
 # JWT secret key — CHANGE THIS in production!
-JWT_SECRET=your-secret-key-here
+JWT_SECRET=your-strong-secret-key-here
 
 # JWT token expiry in minutes (1440 = 24 hours)
 JWT_EXPIRY_MINUTES=1440
+
+# Absolute path for file storage (leave empty = ./uploads relative to executable)
+UPLOAD_PATH=
+
+# Transcoding settings (CPU-only, no GPU needed)
+MAX_TRANSCODE_JOBS=1
+FFMPEG_PRESET=veryfast    # ultrafast | superfast | veryfast | faster | fast | medium
+FFMPEG_CRF=23             # 0-51, lower = better quality, 23 = default
 ```
 
 ### Running the Server
@@ -217,6 +273,13 @@ go build -o mediahub-server .
 ```
 
 The server starts at `http://localhost:9123` (or your configured `APP_PORT`).
+
+```
+🚀 MediaHUB server starting on http://localhost:9123
+📁 Upload path: /path/to/uploads
+🔑 JWT secret: your****
+✅ FFmpeg detected — transcoding and thumbnails enabled
+```
 
 Verify it's running:
 ```bash
@@ -285,31 +348,54 @@ The frontend lives in a **separate repository**: [`mediahub-ui`](https://github.
    | `/assets/*` | `mediahub-ui/assets/`        |
    | `/App.js`   | `mediahub-ui/App.js`         |
    | `/output.css` | `mediahub-ui/assets/output.css` |
+   | `/uploads/*` | Upload directory (media files) |
+   | `/transcoded/*` | HLS transcoded segments |
    | Any other path (SPA fallback) | `mediahub-ui/index.html` |
 
 > **Note:** The `mediahub-ui/` directory is gitignored in this repo since it's managed as a separate repository. Always clone it fresh when setting up a new environment.
 
 ---
 
+## Access Control Model
+
+MediaHUB implements a visibility-based access control system:
+
+| Media Type | Visibility | Who Can See | Who Can Manage |
+|------------|-----------|-------------|----------------|
+| **Movies** (video/*) | `public` | All users | Uploader only |
+| **Music** (audio/*) | `public` | All users | Uploader only |
+| **Photos** (image/*) | `private` | Owner only | Owner only |
+| **Documents** (pdf, docx, txt) | `private` | Owner only | Owner only |
+
+- **Public media** (movies, music) is visible to everyone and can be browsed, searched, and streamed by any authenticated user.
+- **Private media** (photos, documents) acts as a personal vault — only the user who uploaded a file can see or manage it.
+- **Playlists** are personal by default but can be made public by the owner.
+- Visibility is **automatically assigned** based on the file's MIME type during upload.
+
+---
+
 ## API Reference
+
+All requests to protected endpoints require the header:
+```
+Authorization: Bearer <jwt_token>
+```
 
 ### Health Check
 
-| Method | Endpoint       | Description          |
-| ------ | -------------- | -------------------- |
-| `GET`  | `/api/health`  | Server health check  |
+| Method | Endpoint       | Auth | Description          |
+| ------ | -------------- | ---- | -------------------- |
+| `GET`  | `/api/health`  | No   | Server health check  |
 
 ### Auth (`/api/auth`)
 
-| Method   | Endpoint          | Description           | Auth Required |
-| -------- | ----------------- | --------------------- | ------------- |
-| `POST`   | `/api/auth/signup` | Register a new user   | No            |
-| `POST`   | `/api/auth/login`  | Login & get JWT token | No            |
-| `POST`   | `/api/auth/user`   | Get user by ID        | No*           |
-| `PUT`    | `/api/auth/user`   | Update user profile   | No*           |
-| `DELETE` | `/api/auth/user`   | Delete user account   | No*           |
-
-> *Auth middleware is not yet applied to these routes — see [Roadmap](./ROADMAP.md).
+| Method   | Endpoint           | Auth | Description           |
+| -------- | ------------------ | ---- | --------------------- |
+| `POST`   | `/api/auth/signup` | No   | Register a new user   |
+| `POST`   | `/api/auth/login`  | No   | Login & get JWT token |
+| `POST`   | `/api/auth/user`   | Yes  | Get user by ID        |
+| `PUT`    | `/api/auth/user`   | Yes  | Update user profile   |
+| `DELETE` | `/api/auth/user`   | Yes  | Delete user account   |
 
 #### `POST /api/auth/signup`
 ```json
@@ -341,10 +427,22 @@ The frontend lives in a **separate repository**: [`mediahub-ui`](https://github.
 
 ### Media (`/api/media`)
 
-| Method | Endpoint          | Description                    | Auth Required |
-| ------ | ----------------- | ------------------------------ | ------------- |
-| `GET`  | `/api/media/health` | Media module health check    | No            |
-| `POST` | `/api/media/add`  | Upload a media file (multipart) | No*          |
+| Method   | Endpoint                    | Auth | Description                         |
+| -------- | --------------------------- | ---- | ----------------------------------- |
+| `GET`    | `/api/media/health`         | No   | Media module health check           |
+| `POST`   | `/api/media/add`            | Yes  | Upload a media file (multipart)     |
+| `GET`    | `/api/media/list`           | Yes  | Paginated media listing             |
+| `GET`    | `/api/media/search?q=`      | Yes  | Search media by title/description   |
+| `GET`    | `/api/media/categories`     | Yes  | List distinct categories            |
+| `POST`   | `/api/media/details`        | Yes  | Get single media item details       |
+| `PUT`    | `/api/media/metadata`       | Yes  | Update media metadata (owner only)  |
+| `DELETE` | `/api/media/item`           | Yes  | Delete media (owner only)           |
+| `GET`    | `/api/media/vault`          | Yes  | Personal vault (photos/docs)        |
+| `GET`    | `/api/media/stream/:id`     | Yes  | Stream media (HTTP 206)             |
+| `GET`    | `/api/media/thumbnail/:id`  | Yes  | Serve video thumbnail               |
+| `GET`    | `/api/media/hls/:id`        | Yes  | Serve HLS manifest (.m3u8)          |
+| `POST`   | `/api/media/transcode/:id`  | Yes  | Trigger HLS transcoding             |
+| `GET`    | `/api/media/transcode/status` | Yes | Transcode service status           |
 
 #### `POST /api/media/add` (multipart/form-data)
 
@@ -355,14 +453,96 @@ The frontend lives in a **separate repository**: [`mediahub-ui`](https://github.
 | `description`  | string | Description text                 |
 | `category`     | string | e.g. "Movie", "Home Video"       |
 | `genres`       | string | Comma-separated, e.g. "Action,Sci-Fi" |
-| `duration_sec` | uint   | Playback duration in seconds     |
-| `resolution`   | string | e.g. "1920x1080"                 |
+| `duration_sec` | uint   | Playback duration in seconds (auto-detected if FFmpeg available) |
+| `resolution`   | string | e.g. "1920x1080" (auto-detected if FFmpeg available) |
+
+#### `GET /api/media/list` (query parameters)
+
+| Param      | Type   | Description                                |
+| ---------- | ------ | ------------------------------------------ |
+| `limit`    | int    | Items per page (default: 20, max: 100)     |
+| `offset`   | int    | Pagination offset (default: 0)             |
+| `category` | string | Filter by category                         |
+| `genres`   | string | Filter by genre                            |
+| `type`     | string | Filter: `video`, `audio`, `image`, `document` |
+
+#### `GET /api/media/search?q=<query>` (query parameters)
+
+| Param    | Type   | Description                        |
+| -------- | ------ | ---------------------------------- |
+| `q`      | string | Search term (required)             |
+| `limit`  | int    | Items per page (default: 20)       |
+| `offset` | int    | Pagination offset (default: 0)     |
+
+#### `GET /api/media/vault` (query parameters)
+
+| Param    | Type   | Description                        |
+| -------- | ------ | ---------------------------------- |
+| `type`   | string | Filter: `image` or `document`     |
+| `limit`  | int    | Items per page (default: 20)       |
+| `offset` | int    | Pagination offset (default: 0)     |
+
+### Progress (`/api/progress`)
+
+| Method   | Endpoint               | Auth | Description                         |
+| -------- | ---------------------- | ---- | ----------------------------------- |
+| `POST`   | `/api/progress/save`   | Yes  | Save/update playback position       |
+| `GET`    | `/api/progress/continue` | Yes | List "Continue Watching" items     |
+| `DELETE` | `/api/progress/clear`  | Yes  | Clear progress for a media item     |
+
+#### `POST /api/progress/save`
+```json
+{
+  "media_id": 1,
+  "position_sec": 342.5
+}
+```
+> Progress is automatically marked as completed when position reaches ≥95% of the media's total duration.
+
+#### `GET /api/progress/continue?limit=10`
+Returns a list of media items the user hasn't finished, sorted by most recently watched.
+
+#### `DELETE /api/progress/clear`
+```json
+{
+  "media_id": 1
+}
+```
+
+### Playlists (`/api/playlist`)
+
+| Method   | Endpoint                     | Auth | Description                |
+| -------- | ---------------------------- | ---- | -------------------------- |
+| `POST`   | `/api/playlist/create`       | Yes  | Create a playlist          |
+| `GET`    | `/api/playlist/list`         | Yes  | List user's playlists      |
+| `GET`    | `/api/playlist/:id`          | Yes  | Get playlist with items    |
+| `PUT`    | `/api/playlist/:id`          | Yes  | Update playlist metadata   |
+| `DELETE` | `/api/playlist/:id`          | Yes  | Delete playlist            |
+| `POST`   | `/api/playlist/:id/add`      | Yes  | Add song to playlist       |
+| `DELETE` | `/api/playlist/:id/remove`   | Yes  | Remove song from playlist  |
+
+#### `POST /api/playlist/create`
+```json
+{
+  "name": "My Chill Mix",
+  "description": "Relaxing tunes",
+  "is_public": false
+}
+```
+
+#### `POST /api/playlist/:id/add`
+```json
+{
+  "media_id": 5
+}
+```
+> Only audio/music media can be added to playlists.
 
 ---
 
 ## Database Schema
 
-MediaHUB uses **SQLite** with GORM auto-migration. Three tables are created:
+MediaHUB uses **SQLite** with GORM auto-migration. Five tables are created:
 
 ### `users`
 | Column       | Type     | Constraints          |
@@ -378,25 +558,28 @@ MediaHUB uses **SQLite** with GORM auto-migration. Three tables are created:
 | is_active    | bool     | default: true        |
 
 ### `media`
-| Column          | Type   | Constraints            |
-| --------------- | ------ | ---------------------- |
-| id              | uint   | Primary Key, Auto      |
-| created_at      | datetime |                      |
-| updated_at      | datetime |                      |
-| deleted_at      | datetime | Soft Delete index    |
-| file_path       | string | unique, not null       |
-| mime_type       | string | not null               |
-| title           | string | not null               |
-| description     | string |                        |
-| category        | string |                        |
-| genres          | string |                        |
-| file_size_kb    | uint   | not null               |
-| checksum        | string | unique (SHA-256)       |
-| duration_sec    | uint   |                        |
-| resolution      | string |                        |
-| thumbnail_path  | string |                        |
-| is_transcoded   | bool   | default: false         |
-| is_new          | bool   | default: true          |
+| Column              | Type   | Constraints            |
+| ------------------- | ------ | ---------------------- |
+| id                  | uint   | Primary Key, Auto      |
+| created_at          | datetime |                      |
+| updated_at          | datetime |                      |
+| deleted_at          | datetime | Soft Delete index    |
+| file_path           | string | unique, not null       |
+| mime_type           | string | not null               |
+| uploaded_by_user_id | uint   | FK → users, indexed    |
+| visibility          | string | "public" or "private", indexed |
+| title               | string | not null               |
+| description         | string |                        |
+| category            | string | indexed                |
+| genres              | string |                        |
+| file_size_kb        | uint   | not null               |
+| checksum            | string | unique (SHA-256)       |
+| duration_sec        | uint   |                        |
+| resolution          | string |                        |
+| thumbnail_path      | string |                        |
+| is_transcoded       | bool   | default: false         |
+| transcoded_path     | string |                        |
+| is_new              | bool   | default: true          |
 
 ### `user_media_progresses`
 | Column                | Type    | Constraints                          |
@@ -408,34 +591,57 @@ MediaHUB uses **SQLite** with GORM auto-migration. Three tables are created:
 | last_watched_at       | datetime | not null                            |
 | is_completed          | bool    | default: false                       |
 
+### `playlists`
+| Column      | Type     | Constraints              |
+| ----------- | -------- | ------------------------ |
+| id          | uint     | Primary Key, Auto        |
+| created_at  | datetime |                          |
+| updated_at  | datetime |                          |
+| deleted_at  | datetime | Soft Delete index        |
+| name        | string   | not null                 |
+| description | string   |                          |
+| user_id     | uint     | FK → users, indexed      |
+| is_public   | bool     | default: false           |
+
+### `playlist_items`
+| Column      | Type | Constraints                        |
+| ----------- | ---- | ---------------------------------- |
+| id          | uint | Primary Key, Auto                  |
+| created_at  | datetime |                              |
+| updated_at  | datetime |                              |
+| deleted_at  | datetime | Soft Delete index            |
+| playlist_id | uint | FK → playlists, composite unique   |
+| media_id    | uint | FK → media, composite unique       |
+| position    | uint | not null, default: 0 (ordering)    |
+
 ---
 
-## Codebase Analysis
+## Streaming & Transcoding
 
-### What's Working ✅
+### HTTP 206 Streaming
 
-- **User Authentication** — Full CRUD: signup (with bcrypt), login (with JWT), get/update/delete user
-- **Media Upload** — Multipart file upload with automatic MIME detection, sub-folder routing (`videos/`, `images/`, `audios/`, `documents/`), SHA-256 checksum for deduplication, and DB rollback on failure
-- **Static UI Serving** — The Go server serves the `mediahub-ui` SPA with proper SPA fallback routing
-- **File Logging** — Date-stamped debug logs written to `Logs/` directory
-- **Validation** — Clean validation error messages via `go-playground/validator`
-- **CORS** — Permissive CORS middleware for local network access
+MediaHUB serves media files with **HTTP Range Request** support (`206 Partial Content`). This enables:
+- Native `<video>` and `<audio>` element seeking in the browser
+- Progressive download without loading the entire file
+- Efficient bandwidth usage on the local network
 
-### What's Scaffolded / In Progress 🚧
+Stream a file: `GET /api/media/stream/:id` with `Authorization` header.
 
-- **Media listing, search, details, streaming** — Routes defined but commented out in `routes/routes.go`
-- **User progress tracking** — Model exists (`UserMediaProgress`) but routes/handlers are not wired
-- **Upload handler/service** — Struct scaffolded but upload logic lives directly in the repository layer
-- **JWT middleware** — Token generation/validation functions exist but no Gin middleware to protect routes
+### HLS Transcoding (Optional)
 
-### Areas for Improvement ⚠️
+For adaptive bitrate streaming, MediaHUB can transcode videos into **HLS format** (`.m3u8` + `.ts` segments) using FFmpeg's software encoder — **no GPU required**.
 
-- **No auth middleware on protected routes** — User CRUD and media endpoints are currently unprotected
-- **JWT expiry env var unused** — `JWT_EXPIRY_MINUTES` is defined in `.env` but the code hardcodes 24 hours
-- **Error string matching** — Duplicate detection uses `strings.Contains` on error messages (fragile)
-- **No file size limits** — Upload endpoint has no max file size enforcement
-- **Upload path is relative** — Uses `"uploads"` relative path; may break depending on working directory
-- **Potential nil error in Register** — Line 52 in `auth/service/user.go` returns `err` instead of `tokenErr`
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `MAX_TRANSCODE_JOBS` | 1 | Max concurrent transcode jobs |
+| `FFMPEG_PRESET` | `veryfast` | FFmpeg encoding speed (use `ultrafast` on very slow systems) |
+| `FFMPEG_CRF` | `23` | Quality level (0-51, lower = better) |
+
+Trigger transcoding: `POST /api/media/transcode/:id`
+
+The transcoding runs in the background and scales the video to **720p** for efficient streaming. On a typical i5/Ryzen 5, a 1080p movie transcodes at roughly 0.5-1x realtime speed.
+
+Check status: `GET /api/media/transcode/status`
 
 ---
 
