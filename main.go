@@ -6,8 +6,14 @@ import (
 	"mediahub/auth/handler"
 	"mediahub/auth/repository"
 	"mediahub/auth/service"
+	"mediahub/dto"
+	mediahandler "mediahub/media/handler"
+	mediarepository "mediahub/media/repository"
+	mediaservice "mediahub/media/service"
 	"mediahub/models"
 	"mediahub/routes"
+	uploadrepository "mediahub/upload/repository"
+	"net/http"
 	"os"
 
 	"github.com/gin-gonic/gin"
@@ -43,7 +49,10 @@ func main() {
 	}
 
 	// Auto-migrate
-	db.AutoMigrate(&models.User{})
+	dbErr := db.AutoMigrate(&models.User{}, &models.Media{}, &models.UserMediaProgress{})
+	if dbErr != nil {
+		log.Fatalf("Fatal: Database migration failed: %v", dbErr)
+	}
 	fmt.Println("Database connected and migrated")
 
 	// ═══════════════════════════════════════════════════════
@@ -54,6 +63,10 @@ func main() {
 	userService := service.NewUserService(userRepo)
 	userHandler := handler.NewUserHandler(userService)
 
+	mediaRepo := mediarepository.NewMediaRepository(db)
+	uploadRepo := uploadrepository.NewUploadRepository(db)
+	mediaService := mediaservice.NewMediaService(mediaRepo, uploadRepo)
+	mediaHandler := mediahandler.NewMediaHandler(mediaService)
 	// ═══════════════════════════════════════════════════════
 	// 3️ GIN SETUP & ROUTES
 	// ═══════════════════════════════════════════════════════
@@ -62,8 +75,33 @@ func main() {
 	// Routes
 	router := gin.Default()
 
+	// CORS
+	router.Use(CORSMiddleware())
+
 	// Register all routes
-	routes.RegisterRoutes(router, userHandler)
+	routes.RegisterAuthRoutes(router, userHandler)
+	routes.RegisterMediaRoutes(router, mediaHandler)
+
+	// SERVER HEALTH CHECK
+	router.GET("/api/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, dto.HealthReponse{
+			Message: "OK",
+		})
+	})
+
+	// --- 2. SERVE UI ASSETS ---
+	router.Static("/view", "./mediahub-ui/view")
+	router.Static("/src", "./mediahub-ui/src")
+	router.Static("/assets", "./mediahub-ui/assets")
+
+	// Serve the root-level JS files from the UI folder
+	router.StaticFile("/App.js", "./mediahub-ui/App.js")
+	router.StaticFile("/output.css", "./mediahub-ui/assets/output.css")
+
+	// --- FALLBACK ---
+	router.NoRoute(func(c *gin.Context) {
+		c.File("./mediahub-ui/index.html")
+	})
 
 	// Start Server
 	err = router.Run(":" + port)
@@ -71,4 +109,20 @@ func main() {
 		log.Fatal("Server failed:", err)
 	}
 
+}
+
+func CORSMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*") // Change * to your specific domain for better security
+		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE")
+
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+
+		c.Next()
+	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"mediahub/auth"
 	"mediahub/auth/repository"
 	"mediahub/dto"
 	"mediahub/models"
@@ -19,7 +20,7 @@ func NewUserService(repo *repository.UserRepository) *UserService {
 	return &UserService{repo: repo}
 }
 
-func (s *UserService) Register(ctx context.Context, req *dto.SignupRequest) (*dto.UserResponse, error) {
+func (s *UserService) Register(ctx context.Context, req *dto.SignupRequest) (*dto.AuthResponse, error) {
 
 	if req.Email == "" || req.Password == "" {
 		return nil, errors.New("email and password required")
@@ -46,13 +47,13 @@ func (s *UserService) Register(ctx context.Context, req *dto.SignupRequest) (*dt
 		return nil, err
 	}
 
-	return &dto.UserResponse{
-		ID:        user.ID,
-		Email:     user.Email,
-		FirstName: user.FirstName,
-		LastName:  user.LastName,
-		IsActive:  user.IsActive,
-		CreatedAt: user.CreatedAt,
+	token, tokenErr := auth.GenerateToken(user.ID, user.Email)
+	if tokenErr != nil {
+		return nil, err
+	}
+
+	return &dto.AuthResponse{
+		Token: token,
 	}, nil
 }
 
@@ -75,14 +76,18 @@ func (s *UserService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.Au
 		return nil, errors.New("invalid email or password")
 	}
 
+	token, tokenErr := auth.GenerateToken(user.ID, user.Email)
+	if tokenErr != nil {
+		return nil, err
+	}
+
 	return &dto.AuthResponse{
+		Token: token,
 		User: dto.UserResponse{
 			ID:        user.ID,
 			Email:     user.Email,
 			FirstName: user.FirstName,
 			LastName:  user.LastName,
-			IsActive:  user.IsActive,
-			CreatedAt: user.CreatedAt,
 		},
 	}, nil
 }

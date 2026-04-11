@@ -1,5 +1,6 @@
 package dto
 
+// Auth Structs
 type SignupRequest struct {
 	Email     string `json:"email" binding:"required,email"`
 	Password  string `json:"password" binding:"required,min=6"`
@@ -19,4 +20,15 @@ type UpdateUserRequest struct {
 }
 type UserRequest struct {
 	ID uint `json:"id" binding:"required"`
+}
+
+// Media Structs
+
+type MediaCreateRequest struct {
+	Title       string `form:"title"`
+	Description string `form:"description"`
+	Category    string `form:"category"`
+	Genres      string `form:"genres"`
+	DurationSec uint   `form:"duration_sec"`
+	Resolution  string `form:"resolution"`
 }
