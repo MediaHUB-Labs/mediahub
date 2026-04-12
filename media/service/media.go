@@ -35,17 +35,30 @@ func (s *MediaService) CreateMedia(ctx context.Context, file *multipart.FileHead
 		return nil, err
 	}
 
-	// Determine visibility based on MIME type
-	visibility := "public" // Default for videos and audio
-	if strings.HasPrefix(data.MimeType, "image/") {
-		visibility = "private" // Photos are vault items
-	} else if !strings.HasPrefix(data.MimeType, "video/") && !strings.HasPrefix(data.MimeType, "audio/") {
-		visibility = "private" // Documents are vault items
+	// Determine visibility based on Type or MIME type
+	visibility := "public"
+	mediaType := strings.ToLower(req.Type)
+	if mediaType == "" {
+		// Fallback to MIME detection if type not provided
+		if strings.HasPrefix(data.MimeType, "image/") {
+			mediaType = "image"
+		} else if strings.HasPrefix(data.MimeType, "video/") {
+			mediaType = "video"
+		} else if strings.HasPrefix(data.MimeType, "audio/") {
+			mediaType = "audio"
+		} else {
+			mediaType = "document"
+		}
+	}
+
+	if mediaType == "image" || mediaType == "document" {
+		visibility = "private"
 	}
 
 	media := &models.Media{
 		FilePath:         data.FilePath,
 		MimeType:         data.MimeType,
+		MediaType:        mediaType,
 		Title:            req.Title,
 		Description:      req.Description,
 		Category:         req.Category,
@@ -236,6 +249,44 @@ func (s *MediaService) GetUserVault(ctx context.Context, userID uint, mediaType 
 	}
 
 	return s.repo.FindByUser(ctx, userID, mediaType, limit, offset)
+}
+
+// RegenerateThumbnail manually triggers the thumbnail generation for a media item.
+func (s *MediaService) RegenerateThumbnail(ctx context.Context, id uint, userID uint) error {
+	media, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	// Only owner can regenerate
+	if media.UploadedByUserID != userID {
+		return errors.New("access denied")
+	}
+
+	// Determine base path
+	basePath := os.Getenv("UPLOAD_PATH")
+	if basePath == "" {
+		exePath, err := os.Executable()
+		if err == nil {
+			// Try to handle both dev and prod paths
+			if strings.Contains(exePath, "/mediahub-server") {
+				basePath = fmt.Sprintf("%s/uploads", exePath[:len(exePath)-len("/mediahub-server")])
+			} else {
+				basePath = "uploads"
+			}
+		} else {
+			basePath = "uploads"
+		}
+	}
+
+	thumbnailPath := utils.GetThumbnailPath(basePath, media.ID)
+	if err := utils.GenerateThumbnail(media.FilePath, thumbnailPath); err != nil {
+		return err
+	}
+
+	// Update media record with thumbnail path if it changed
+	media.ThumbnailPath = thumbnailPath
+	return s.repo.Update(ctx, media)
 }
 
 // MediaToResponse converts a Media model to a MediaResponse DTO.

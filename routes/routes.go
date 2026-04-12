@@ -69,6 +69,7 @@ func RegisterMediaRoutes(router *gin.Engine, mediaHandler *mediaHandler.MediaHan
 
 			// Metadata Management
 			protected.PUT("/metadata", mediaHandler.UpdateMediaMetadata)
+			protected.POST("/metadata/regenerate-thumbnail/:id", mediaHandler.RegenerateThumbnail)
 			protected.DELETE("/item", mediaHandler.DeleteMedia)
 
 			// Personal vault (photos, documents)

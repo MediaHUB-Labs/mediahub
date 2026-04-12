@@ -5,6 +5,7 @@ import (
 	"mediahub/dto"
 	"mediahub/media/service"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -318,5 +319,33 @@ func (h *MediaHandler) GetUserVault(c *gin.Context) {
 			Limit:      limit,
 			Offset:     offset,
 		},
+	})
+}
+
+// RegenerateThumbnail triggers manual thumbnail generation.
+func (h *MediaHandler) RegenerateThumbnail(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, dto.ApiResponse{
+			Success: false,
+			Error:   "invalid media id",
+		})
+		return
+	}
+
+	userID := getUserID(c)
+	err = h.service.RegenerateThumbnail(c.Request.Context(), uint(id), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, dto.ApiResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, dto.ApiResponse{
+		Success: true,
+		Message: "Thumbnail regeneration successful",
 	})
 }
