@@ -195,6 +195,7 @@ func main() {
 	// Serve the root-level JS files from the UI folder
 	router.StaticFile("/App.js", "./mediahub-ui/App.js")
 	router.StaticFile("/output.css", "./mediahub-ui/assets/output.css")
+	router.StaticFile("/hls.min.js", "./mediahub-ui/assets/js/hls.min.js")
 
 	// --- FALLBACK ---
 	router.NoRoute(func(c *gin.Context) {

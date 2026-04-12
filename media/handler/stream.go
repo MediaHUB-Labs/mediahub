@@ -157,6 +157,6 @@ func (h *MediaHandler) ServeHLSManifest(c *gin.Context) {
 		return
 	}
 
-	c.Header("Content-Type", "application/vnd.apple.mpegurl")
-	c.File(media.TranscodedPath)
+	c.Header("Cache-Control", "no-cache")
+	c.Redirect(http.StatusTemporaryRedirect, "/transcoded/"+idStr+"/index.m3u8")
 }

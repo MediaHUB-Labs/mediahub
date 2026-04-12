@@ -22,28 +22,30 @@ func GenerateThumbnail(videoPath string, outputPath string) error {
 		return fmt.Errorf("failed to create thumbnail directory: %w", err)
 	}
 
-	// First, try to get the duration to seek to 10%
-	seekTime := "5" // Default: grab frame at 5 seconds
+	// Determine if we need to seek based on media info
+	seekTime := ""
 	info, err := ProbeMediaInfo(videoPath)
-	if err == nil && info != nil && info.DurationSec > 10 {
-		// Seek to 10% of the video
-		seekTime = fmt.Sprintf("%d", info.DurationSec/10)
+	if err == nil && info != nil && info.DurationSec > 0 {
+		// If it's a video with duration, seek to 10% or default 5s
+		sTime := 5
+		if info.DurationSec > 10 {
+			sTime = int(info.DurationSec / 10)
+		}
+		seekTime = fmt.Sprintf("%d", sTime)
 	}
 
 	// Generate thumbnail using FFmpeg
-	// -ss: seek to position
+	// -ss: seek to position (if video)
 	// -vframes 1: extract 1 frame
 	// -vf scale: scale to max 480px width, keep aspect ratio
 	// -q:v 2: high quality JPEG
-	cmd := exec.Command("ffmpeg",
-		"-ss", seekTime,
-		"-i", videoPath,
-		"-vframes", "1",
-		"-vf", "scale=480:-1",
-		"-q:v", "2",
-		"-y", // Overwrite output
-		outputPath,
-	)
+	args := []string{}
+	if seekTime != "" {
+		args = append(args, "-ss", seekTime)
+	}
+	args = append(args, "-i", videoPath, "-vframes", "1", "-vf", "scale=480:-1", "-q:v", "2", "-y", outputPath)
+
+	cmd := exec.Command("ffmpeg", args...)
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {

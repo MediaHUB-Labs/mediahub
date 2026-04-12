@@ -14,6 +14,9 @@ type Media struct {
 	// The file's MIME type (e.g., 'video/mp4', 'image/jpeg', 'application/pdf').
 	MimeType string `gorm:"not null"`
 
+	// High-level media type (e.g., 'video', 'audio', 'image', 'document').
+	MediaType string `gorm:"index"`
+
 	// --- OWNERSHIP & ACCESS CONTROL ---
 
 	// The user who uploaded this media item. 0 = system/unknown (legacy data).
