@@ -34,6 +34,7 @@ type MediaCreateRequest struct {
 	Title       string `form:"title"`
 	Description string `form:"description"`
 	Category    string `form:"category"`
+	Type        string `form:"type"`
 	Genres      string `form:"genres"`
 	DurationSec uint   `form:"duration_sec"`
 	Resolution  string `form:"resolution"`
