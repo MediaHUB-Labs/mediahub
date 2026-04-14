@@ -3,11 +3,11 @@ package routes
 import (
 	"mediahub/auth"
 	authHandler "mediahub/auth/handler"
+	"mediahub/dto"
 	mediaHandler "mediahub/media/handler"
 	playlistHandler "mediahub/playlist/handler"
 	progressHandler "mediahub/progress/handler"
 	"mediahub/transcode"
-	"mediahub/dto"
 	"net/http"
 	"strconv"
 

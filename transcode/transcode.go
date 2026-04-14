@@ -1,6 +1,7 @@
 package transcode
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"mediahub/media/repository"
@@ -9,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -18,6 +20,7 @@ type TranscodeService struct {
 	basePath     string
 	maxJobs      int
 	activeJobs   int
+	JobProgress  map[uint]float64 // Tracks progress (0-100) per mediaID
 	mu           sync.Mutex
 	ffmpegPreset string
 	ffmpegCRF    string
@@ -46,6 +49,7 @@ func NewTranscodeService(mediaRepo *repository.MediaRepository, basePath string)
 		mediaRepo:    mediaRepo,
 		basePath:     basePath,
 		maxJobs:      maxJobs,
+		JobProgress:  make(map[uint]float64),
 		ffmpegPreset: preset,
 		ffmpegCRF:    crf,
 	}
@@ -84,9 +88,10 @@ func (s *TranscodeService) TranscodeToHLS(mediaID uint) error {
 		return fmt.Errorf("media is already transcoded")
 	}
 
-	// Increment active jobs
+	// Increment active jobs and init progress
 	s.mu.Lock()
 	s.activeJobs++
+	s.JobProgress[mediaID] = 0
 	s.mu.Unlock()
 
 	// Run transcoding in background
@@ -94,6 +99,7 @@ func (s *TranscodeService) TranscodeToHLS(mediaID uint) error {
 		defer func() {
 			s.mu.Lock()
 			s.activeJobs--
+			delete(s.JobProgress, mediaID)
 			s.mu.Unlock()
 		}()
 
@@ -109,16 +115,10 @@ func (s *TranscodeService) TranscodeToHLS(mediaID uint) error {
 		manifestPath := filepath.Join(outputDir, "index.m3u8")
 		segmentPattern := filepath.Join(outputDir, "segment_%03d.ts")
 
-		// FFmpeg command for HLS transcoding (CPU-only)
-		// -c:v libx264: software H.264 encoder (no GPU needed)
-		// -preset veryfast: fast encoding for low-spec systems
-		// -crf 23: good quality/size balance
-		// -c:a aac: transcode audio to AAC
-		// -hls_time 10: 10-second segments
-		// -hls_list_size 0: include all segments in manifest
-		// -vf scale=-2:720: scale to 720p, keep aspect ratio
+		// FFmpeg command for HLS transcoding (CPU-only) with progress reporting
 		cmd := exec.Command("ffmpeg",
 			"-i", media.FilePath,
+			"-progress", "pipe:1",
 			"-c:v", "libx264",
 			"-preset", s.ffmpegPreset,
 			"-crf", s.ffmpegCRF,
@@ -133,10 +133,38 @@ func (s *TranscodeService) TranscodeToHLS(mediaID uint) error {
 			manifestPath,
 		)
 
-		output, err := cmd.CombinedOutput()
+		stdout, err := cmd.StdoutPipe()
 		if err != nil {
-			utils.LogToFile(fmt.Sprintf("HLS transcode failed for media ID %d: %v | Output: %s",
-				mediaID, err, string(output)))
+			utils.LogToFile(fmt.Sprintf("Failed to get stdout pipe for ffmpeg: %v", err))
+			return
+		}
+
+		if err := cmd.Start(); err != nil {
+			utils.LogToFile(fmt.Sprintf("Failed to start ffmpeg: %v", err))
+			return
+		}
+
+		// Read progress from stdout
+		scanner := bufio.NewScanner(stdout)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.HasPrefix(line, "out_time_us=") {
+				timeUsStr := strings.TrimPrefix(line, "out_time_us=")
+				timeUs, err := strconv.ParseInt(timeUsStr, 10, 64)
+				if err == nil && media.DurationSec > 0 {
+					progress := (float64(timeUs) / 1000000.0) / float64(media.DurationSec) * 100
+					if progress > 100 {
+						progress = 100
+					}
+					s.mu.Lock()
+					s.JobProgress[mediaID] = progress
+					s.mu.Unlock()
+				}
+			}
+		}
+
+		if err := cmd.Wait(); err != nil {
+			utils.LogToFile(fmt.Sprintf("HLS transcode failed for media ID %d: %v", mediaID, err))
 			// Clean up failed output
 			_ = os.RemoveAll(outputDir)
 			return
@@ -158,17 +186,26 @@ func (s *TranscodeService) TranscodeToHLS(mediaID uint) error {
 
 // GetTranscodeStatus returns the current transcoding status.
 type TranscodeStatus struct {
-	Available  bool `json:"available"`
-	ActiveJobs int  `json:"active_jobs"`
-	MaxJobs    int  `json:"max_jobs"`
+	Available   bool             `json:"available"`
+	ActiveJobs  int              `json:"active_jobs"`
+	MaxJobs     int              `json:"max_jobs"`
+	JobProgress map[uint]float64 `json:"job_progress"`
 }
 
 func (s *TranscodeService) GetStatus() TranscodeStatus {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// Create a copy of the progress map to avoid concurrent access issues after returning
+	progressCopy := make(map[uint]float64)
+	for k, v := range s.JobProgress {
+		progressCopy[k] = v
+	}
+
 	return TranscodeStatus{
-		Available:  s.IsAvailable(),
-		ActiveJobs: s.activeJobs,
-		MaxJobs:    s.maxJobs,
+		Available:   s.IsAvailable(),
+		ActiveJobs:  s.activeJobs,
+		MaxJobs:     s.maxJobs,
+		JobProgress: progressCopy,
 	}
 }
