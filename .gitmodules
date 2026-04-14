@@ -1,0 +1,3 @@
+[submodule "mediahub-ui"]
+	path = mediahub-ui
+	url = https://github.com/MediaHUB-Labs/mediahub-ui.git
