@@ -12,22 +12,13 @@ type UserMediaProgress struct {
 
 	// --- RELATIONSHIPS (Foreign Keys) ---
 
-	// Foreign Key: ID of the User who is watching
-	UserID uint `gorm:"not null;uniqueIndex:idx_user_media"`
-	User   User
+	UserID uint `gorm:"not null;uniqueIndex:idx_user_media" json:"user_id"`
+	User   User `json:"-"`
 
-	// Foreign Key: ID of the Media item being watched
-	MediaID uint `gorm:"not null;uniqueIndex:idx_user_media"`
-	Media   Media
+	MediaID uint `gorm:"not null;uniqueIndex:idx_user_media" json:"media_id"`
+	Media   Media `json:"media,omitempty"`
 
-	// --- PROGRESS DATA ---
-
-	// CRITICAL: The timestamp (in seconds) where the user paused.
-	PlayheadPositionSec float64 `gorm:"default:0"`
-
-	// Last time this record was updated. Used to sort the 'Continue Watching' row.
-	LastWatchedAt time.Time `gorm:"not null"`
-
-	// Flag if the user has completed the item (e.g., progress > 95% of total duration).
-	IsCompleted bool `gorm:"default:false"`
+	PlayheadPositionSec float64 `gorm:"default:0" json:"playhead_position_sec"`
+	LastWatchedAt time.Time `gorm:"not null" json:"last_watched_at"`
+	IsCompleted bool `gorm:"default:false" json:"is_completed"`
 }
