@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -48,6 +49,18 @@ import (
 var db *gorm.DB
 
 func main() {
+
+	// Handle install/uninstall subcommands
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "install":
+			handleInstall()
+			return
+		case "uninstall":
+			handleUninstall()
+			return
+		}
+	}
 
 	err := godotenv.Load()
 	if err != nil {
@@ -187,19 +200,38 @@ func main() {
 	}
 	router.Static("/transcoded", transcodedPath)
 
-	// --- SERVE UI ASSETS ---
-	router.Static("/view", "./mediahub-ui/view")
-	router.Static("/src", "./mediahub-ui/src")
-	router.Static("/assets", "./mediahub-ui/assets")
+	// --- SERVE EMBEDDED UI ASSETS ---
+	// Create sub-filesystems from the embedded FS for each UI path prefix
+	viewFS, _ := fs.Sub(embeddedUI, "mediahub-ui/view")
+	srcFS, _ := fs.Sub(embeddedUI, "mediahub-ui/src")
+	assetsFS, _ := fs.Sub(embeddedUI, "mediahub-ui/assets")
 
-	// Serve the root-level JS files from the UI folder
-	router.StaticFile("/App.js", "./mediahub-ui/App.js")
-	router.StaticFile("/output.css", "./mediahub-ui/assets/output.css")
-	router.StaticFile("/hls.min.js", "./mediahub-ui/assets/js/hls.min.js")
+	router.StaticFS("/view", http.FS(viewFS))
+	router.StaticFS("/src", http.FS(srcFS))
+	router.StaticFS("/assets", http.FS(assetsFS))
 
-	// --- FALLBACK ---
+	// Serve the root-level JS/CSS files from the embedded UI folder
+	router.GET("/App.js", func(c *gin.Context) {
+		c.FileFromFS("mediahub-ui/App.js", http.FS(embeddedUI))
+	})
+	router.GET("/output.css", func(c *gin.Context) {
+		c.FileFromFS("mediahub-ui/assets/output.css", http.FS(embeddedUI))
+	})
+	router.GET("/hls.min.js", func(c *gin.Context) {
+		c.FileFromFS("mediahub-ui/assets/js/hls.min.js", http.FS(embeddedUI))
+	})
+
+	// --- FALLBACK: serve index.html for SPA routing ---
+	// NOTE: We read the file directly instead of using c.FileFromFS because
+	// http.FileServer (used internally by FileFromFS) auto-redirects any
+	// path ending in "/index.html" to its parent directory, causing an
+	// infinite redirect loop for the SPA catch-all route.
+	indexHTML, err := embeddedUI.ReadFile("mediahub-ui/index.html")
+	if err != nil {
+		log.Fatalf("Fatal: could not read embedded index.html: %v", err)
+	}
 	router.NoRoute(func(c *gin.Context) {
-		c.File("./mediahub-ui/index.html")
+		c.Data(http.StatusOK, "text/html; charset=utf-8", indexHTML)
 	})
 
 	// ═══════════════════════════════════════════════════════
